@@ -281,23 +281,11 @@ Document Text:
 
 Please provide a structured summary that includes:
 
-1. **Document Type**: What type of announcement is this? (AGM, EGM, Quarterly Results, Dividend, Board Meeting, etc.)
+1. *Document Type*: What type of announcement is this? (AGM, EGM, Quarterly Results, Dividend, Board Meeting, etc.)
 
-2. **Summary**: A concise 2-3 sentence summary of the most important information
+2. *Summary*: A concise 2-3 sentence summary of the most important information
 
-3. **Sentiment Analysis**: Assess the overall sentiment of the announcement (e.g., Positive, Negative, Neutral) and briefly explain your reasoning.
-
-4. **Key Dates**: Extract any important dates mentioned (meeting dates, record dates, ex-dates, etc.)
-
-5. **Financial Highlights**: Any financial figures, ratios, or performance metrics mentioned
-
-6. **Corporate Actions**: Any dividends, bonuses, stock splits, or other corporate actions
-
-7. **Business Updates**: Any significant business developments, partnerships, or strategic initiatives
-
-8. **Regulatory Compliance**: Any regulatory filings, compliance updates, or SEBI-related information
-
-
+3. *Sentiment Analysis*: Assess the overall sentiment of the announcement (e.g., Positive, Negative, Neutral) and briefly explain your reasoning.
 
 Format your response as a clear, structured summary that would be useful for investors and analysts.
 """
@@ -551,18 +539,13 @@ def process_latest_announcement(cookie_header: Optional[str] = None, use_sample_
     print("\nStep 6: Formatting WhatsApp message...")
     
     # Create a formatted message for WhatsApp
-    whatsapp_message = f"""📊 *Latest Corporate Announcement*
+    whatsapp_message = f"""
+Company: {company_name}
+https://www.screener.in{company_url}
 
-🏢 *Company:* {company_name}
-🔗 *Company Link:* https://www.screener.in{company_url}
+PDF Document: {pdf_url}
 
-📝 *Summary:*
 {summary}
-
-📄 *PDF Document:* {pdf_url}
-
-⏰ *Time:* {time.strftime('%Y-%m-%d %H:%M')}
-
 ---
 *Powered by FinVarta AI*"""
     
