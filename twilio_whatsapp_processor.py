@@ -543,7 +543,7 @@ def process_latest_announcement(cookie_header: Optional[str] = None, use_sample_
 Company: {company_name}
 https://www.screener.in{company_url}
 
-PDF Document: {pdf_url}
+Document: {pdf_url}
 
 {summary}
 ---
