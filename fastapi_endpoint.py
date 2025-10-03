@@ -22,7 +22,6 @@ app = FastAPI(
 
 # Request model for the endpoint
 class ProcessRequest(BaseModel):
-    use_sample_data: Optional[bool] = False
     cookie_header: Optional[str] = None
 
 # Response model
@@ -69,7 +68,7 @@ async def process_announcement(request: ProcessRequest):
         
         # Process the announcement
         success = process_latest_announcement(
-            cookie_header=request.cookie_header,
+            cookie_header=os.getenv("SCREENER_COOKIE_HEADER"),
             use_sample_data=request.use_sample_data
         )
         
