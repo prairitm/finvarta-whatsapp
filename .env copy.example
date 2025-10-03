@@ -1,0 +1,22 @@
+# OpenAI Configuration
+OPENAI_API_KEY=your-openai-api-key-here
+
+# Twilio Configuration
+TWILIO_ACCOUNT_SID=your-twilio-account-sid-here
+TWILIO_AUTH_TOKEN=your-twilio-auth-token-here
+TWILIO_WHATSAPP_NUMBER=whatsapp:+141552388
+
+# WhatsApp Recipients (comma-separated phone numbers with country code)
+WHATSAPP_RECIPIENTS=+919920906247,+919818709991
+
+# Optional: Screener.in Authentication (if needed)
+SCREENER_COOKIE_HEADER=theme=dark; csrftoken=your-csrf-token; sessionid=your-session-id
+
+# OpenAI Model Configuration (optional - defaults provided)
+OPENAI_MODEL=gpt-3.5-turbo
+OPENAI_MAX_TOKENS=1000
+OPENAI_TEMPERATURE=0.3
+OPENAI_MAX_TEXT_LENGTH=12000
+
+# Request Configuration (optional - defaults provided)
+DELAY_BETWEEN_REQUESTS=2
