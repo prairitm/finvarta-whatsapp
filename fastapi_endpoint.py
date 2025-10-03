@@ -22,7 +22,7 @@ app = FastAPI(
 
 # Request model for the endpoint
 class ProcessRequest(BaseModel):
-    cookie_header: Optional[str] = None
+    use_sample_data: Optional[bool] = False
 
 # Response model
 class ProcessResponse(BaseModel):
