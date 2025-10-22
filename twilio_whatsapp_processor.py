@@ -205,7 +205,7 @@ def get_screener_announcements(
     """
     Fetches https://www.screener.in/announcements/ and returns the HTML as text.
     """
-    url = "https://www.screener.in/announcements/"
+    url = "https://www.screener.in/announcements/user-filters/192898/"
 
     # Headers mirroring your browser request
     headers = {
