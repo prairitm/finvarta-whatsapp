@@ -36,16 +36,6 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# Try to import openai, install if not available
-try:
-    from openai import OpenAI
-except ImportError:
-    print("❌ openai library not found. Installing...")
-    import subprocess
-    import sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "openai"])
-    from openai import OpenAI
-
 # Try to import twilio, install if not available
 try:
     from twilio.rest import Client
@@ -58,19 +48,12 @@ except ImportError:
 
 # Configuration - Load from environment variables
 # Docker Model Configuration
-DOCKER_MODEL_BASE_URL = os.getenv("DOCKER_MODEL_BASE_URL", "http://localhost:12434/engines/llama.cpp/v1")
-DOCKER_MODEL_API_KEY = os.getenv("DOCKER_MODEL_API_KEY", "dummy_value")
-DEFAULT_MODEL = os.getenv("DOCKER_MODEL", "ai/mistral")
+DOCKER_MODEL_URL = os.getenv("DOCKER_MODEL_URL", "http://localhost:8000/v1/chat/completions")
+DEFAULT_MODEL = os.getenv("DOCKER_MODEL", "gpt-3.5-turbo")
 MAX_TOKENS = int(os.getenv("DOCKER_MAX_TOKENS", "1000"))
 TEMPERATURE = float(os.getenv("DOCKER_TEMPERATURE", "0.3"))
 MAX_TEXT_LENGTH = int(os.getenv("DOCKER_MAX_TEXT_LENGTH", "12000"))
 DELAY_BETWEEN_REQUESTS = int(os.getenv("DELAY_BETWEEN_REQUESTS", "2"))
-
-# Initialize OpenAI client with custom base_url for local Docker model
-docker_model_client = OpenAI(
-    api_key=DOCKER_MODEL_API_KEY,
-    base_url=DOCKER_MODEL_BASE_URL
-)
 
 # Twilio Configuration - Load from environment variables
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
@@ -245,6 +228,12 @@ def get_screener_announcements(
         resp = s.get(url, headers=headers, cookies=cookies, timeout=timeout, allow_redirects=True)
         resp.raise_for_status()
         
+        # Debug: Log response details
+        print(f"🔍 DEBUG: Response status: {resp.status_code}")
+        print(f"🔍 DEBUG: Response URL: {resp.url}")
+        print(f"🔍 DEBUG: Response content length: {len(resp.text)} characters")
+        print(f"🔍 DEBUG: Response content preview (first 500 chars): {resp.text[:500]}")
+        
         return resp.text
 
 
@@ -259,47 +248,61 @@ def extract_latest_announcement(html_text: str) -> Optional[Tuple[str, str]]:
         Tuple of (company_url, pdf_url) for the latest announcement, or None if not found
     """
     # Parse HTML
+    print(f"🔍 DEBUG: Parsing HTML content ({len(html_text)} characters)...")
     soup = BeautifulSoup(html_text, "lxml")
 
     # Collect hrefs
     all_links = soup.find_all("a")
+    print(f"🔍 DEBUG: Found {len(all_links)} total <a> tags")
+    
     hrefs = [a.get("href").strip() for a in all_links if a.get("href")]
+    print(f"🔍 DEBUG: Found {len(hrefs)} links with href attributes")
     
     if len(hrefs) == 0:
+        print("⚠️  DEBUG: No hrefs found in HTML. Showing first 10 links:")
+        for i, link in enumerate(all_links[:10]):
+            print(f"   Link {i+1}: href={link.get('href')}, text={link.get_text()[:50]}")
         return None
     
+    # Debug: Show first 20 hrefs
+    print(f"🔍 DEBUG: First 20 hrefs found:")
+    for i, href in enumerate(hrefs[:20]):
+        print(f"   {i+1}. {href}")
+    
+    # Look for company links
+    company_links = [href for href in hrefs if "/company" in href]
+    print(f"🔍 DEBUG: Found {len(company_links)} links containing '/company'")
+    if company_links:
+        print(f"🔍 DEBUG: First 5 company links: {company_links[:5]}")
+    
+    # Look for PDF links
+    pdf_links = [href for href in hrefs if PDF_REGEX.search(href)]
+    print(f"🔍 DEBUG: Found {len(pdf_links)} links matching PDF pattern")
+    if pdf_links:
+        print(f"🔍 DEBUG: First 5 PDF links: {pdf_links[:5]}")
+    
     # Look for consecutive company -> pdf pairs
+    print(f"🔍 DEBUG: Searching for consecutive company -> PDF pairs...")
     found_pairs = []
     for i in range(len(hrefs) - 1):
         if "/company" in hrefs[i] and PDF_REGEX.search(hrefs[i + 1]):
             pair = (hrefs[i], hrefs[i + 1])
             found_pairs.append(pair)
+            print(f"🔍 DEBUG: Found pair {len(found_pairs)}: company={hrefs[i]}, pdf={hrefs[i + 1]}")
     
     if found_pairs:
+        print(f"✅ DEBUG: Found {len(found_pairs)} announcement pair(s), returning first one")
         return found_pairs[0]
+    else:
+        print("❌ DEBUG: No consecutive company -> PDF pairs found")
+        print("🔍 DEBUG: Checking for non-consecutive pairs...")
+        # Try to find any company and PDF links (not necessarily consecutive)
+        if company_links and pdf_links:
+            print(f"   Found {len(company_links)} company links and {len(pdf_links)} PDF links, but they're not consecutive")
+            print(f"   First company link index: {hrefs.index(company_links[0]) if company_links else 'N/A'}")
+            print(f"   First PDF link index: {hrefs.index(pdf_links[0]) if pdf_links else 'N/A'}")
     
     return None
-
-
-def test_docker_model_connection() -> bool:
-    """Test if Docker model is accessible before making actual requests"""
-    try:
-        # Extract base host and port from DOCKER_MODEL_BASE_URL
-        from urllib.parse import urlparse
-        parsed = urlparse(DOCKER_MODEL_BASE_URL)
-        base_host = parsed.hostname or "localhost"
-        base_port = parsed.port or 12434
-        
-        # Try a simple socket connection test
-        import socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(3)
-        result = sock.connect_ex((base_host, base_port))
-        sock.close()
-        
-        return result == 0
-    except Exception:
-        return False
 
 
 def query_docker_model(text: str, company_name: str) -> str:
@@ -326,83 +329,96 @@ def query_docker_model(text: str, company_name: str) -> str:
 
                 Please provide a structured summary that includes:
 
-                1. *Summary*: A concise 2-3 sentence summary of the most important information
+                1. *Document Type*: What type of announcement is this? (AGM, EGM, Quarterly Results, Dividend, Board Meeting, etc.)
 
-                2. *Sentiment Analysis*: Assess the overall sentiment of the announcement (e.g., Positive, Negative, Neutral) and briefly explain your reasoning. Keep it under 100 characters.
+                2. *Summary*: A concise 2-3 sentence summary of the most important information
 
-                Format your response as a clear, structured summary that would be useful for investors and analysts. Keep it under 1000 characters.
+                3. *Sentiment Analysis*: Assess the overall sentiment of the announcement (e.g., Positive, Negative, Neutral) and briefly explain your reasoning.
+
+                Format your response as a clear, structured summary that would be useful for investors and analysts.
             """
 
-    # Test connection first
-    if not test_docker_model_connection():
-        error_msg = f"Docker Model Connection Error: Cannot connect to {DOCKER_MODEL_BASE_URL}. Is the Docker model running?"
-        print(f"\n❌ {error_msg}")
-        print("\n💡 TROUBLESHOOTING:")
-        print("   1. Make sure your local LLM server is running")
-        print("   2. Check if the service is listening on the correct port")
-        print("   3. Verify DOCKER_MODEL_BASE_URL environment variable is correct")
-        print(f"   4. Current DOCKER_MODEL_BASE_URL: {DOCKER_MODEL_BASE_URL}")
-        print("\n   To check if your service is running:")
-        print(f"   - Try: curl http://localhost:12434/engines/llama.cpp/v1/models")
-        print("   - Or check with: lsof -i :12434")
-        print("   - Or check with: netstat -an | grep 12434")
-        return error_msg
+    print(f"🔍 DEBUG: Connecting to Docker model at: {DOCKER_MODEL_URL}")
+    print(f"🔍 DEBUG: Using model: {DEFAULT_MODEL}")
     
     try:
-        # Use OpenAI client with custom base_url
-        # Note: The client will append /chat/completions to the base_url
-        response = docker_model_client.chat.completions.create(
-            model=DEFAULT_MODEL,
-            messages=[
+        # Prepare request payload (OpenAI-compatible format)
+        payload = {
+            "model": DEFAULT_MODEL,
+            "messages": [
                 {"role": "system", "content": "You are a professional financial analyst. Provide concise, clear summaries suitable for WhatsApp messages."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=MAX_TOKENS,
-            temperature=TEMPERATURE,
+            "max_tokens": MAX_TOKENS,
+            "temperature": TEMPERATURE
+        }
+        
+        # Make HTTP request to Docker model endpoint
+        print(f"🔍 DEBUG: Sending request to Docker model...")
+        response = requests.post(
+            DOCKER_MODEL_URL,
+            json=payload,
+            headers={"Content-Type": "application/json"},
             timeout=60
         )
         
-        # Extract response content
-        if response.choices and len(response.choices) > 0:
-            return response.choices[0].message.content.strip()
+        print(f"🔍 DEBUG: Response status: {response.status_code}")
+        response.raise_for_status()
+        result = response.json()
+        
+        # Extract response content (OpenAI-compatible format)
+        if "choices" in result and len(result["choices"]) > 0:
+            return result["choices"][0]["message"]["content"].strip()
         else:
-            return f"Docker Model Error: Unexpected response format: {response}"
+            print(f"🔍 DEBUG: Unexpected response format: {result}")
+            return f"Docker Model Error: Unexpected response format: {result}"
         
-    except Exception as e:
+    except requests.exceptions.ConnectionError as e:
         error_str = str(e)
-        error_type = type(e).__name__
-        print(f"❌ Error ({error_type}): {error_str}")
+        print(f"❌ Connection Error: Cannot connect to Docker model at {DOCKER_MODEL_URL}")
+        print(f"🔍 DEBUG: Error details: {error_str}")
+        print("\n💡 TROUBLESHOOTING:")
+        print("   1. Make sure your Docker model is running")
+        print("   2. Check if the model is accessible at the configured URL")
+        print("   3. Verify DOCKER_MODEL_URL environment variable is correct")
+        print(f"   4. Current DOCKER_MODEL_URL: {DOCKER_MODEL_URL}")
+        print("\n   Example Docker commands:")
+        print("   - For Ollama: docker run -d -p 8000:11434 ollama/ollama")
+        print("   - For vLLM: docker run -d -p 8000:8000 vllm/vllm-openai:latest")
+        return f"Docker Model Connection Error: Cannot connect to {DOCKER_MODEL_URL}. Is the Docker model running?"
         
-        # Check for connection errors
-        if "Connection" in error_type or "connection" in error_str.lower() or "refused" in error_str.lower():
-            print(f"❌ Connection Error: Cannot connect to Docker model at {DOCKER_MODEL_BASE_URL}")
-            print("\n💡 TROUBLESHOOTING:")
-            print("   1. Make sure your Docker model is running")
-            print("   2. Check if the model is accessible at the configured URL")
-            print("   3. Verify DOCKER_MODEL_BASE_URL environment variable is correct")
-            print(f"   4. Current DOCKER_MODEL_BASE_URL: {DOCKER_MODEL_BASE_URL}")
-            print("\n   The OpenAI client will call:")
-            print(f"   {DOCKER_MODEL_BASE_URL}/chat/completions")
-            print("\n   To test manually:")
-            print(f"   curl -X POST {DOCKER_MODEL_BASE_URL}/chat/completions \\")
-            print(f"     -H 'Content-Type: application/json' \\")
-            print(f"     -d '{{\"model\":\"{DEFAULT_MODEL}\",\"messages\":[{{\"role\":\"user\",\"content\":\"test\"}}]}}'")
-            return f"Docker Model Connection Error: Cannot connect to {DOCKER_MODEL_BASE_URL}. Is the Docker model running?"
+    except requests.exceptions.Timeout as e:
+        error_str = str(e)
+        print(f"❌ Timeout Error: Request to {DOCKER_MODEL_URL} timed out after 60 seconds")
+        return f"Docker Model Timeout Error: Request timed out. The model may be overloaded or slow."
         
-        # Check for timeout errors
-        elif "timeout" in error_str.lower() or "Timeout" in error_type:
-            print(f"❌ Timeout Error: Request to {DOCKER_MODEL_BASE_URL} timed out after 60 seconds")
-            return f"Docker Model Timeout Error: Request timed out. The model may be overloaded or slow."
+    except requests.exceptions.HTTPError as e:
+        error_str = str(e)
+        status_code = getattr(e.response, 'status_code', 'Unknown') if hasattr(e, 'response') else 'Unknown'
+        print(f"❌ HTTP Error: {status_code} - {error_str}")
+        if status_code == 404:
+            print(f"   The endpoint {DOCKER_MODEL_URL} was not found. Check your Docker model configuration.")
+        elif status_code == 401:
+            print(f"   Authentication failed. Check if your Docker model requires API keys.")
+        return f"Docker Model HTTP Error ({status_code}): {error_str}"
         
-        # Check for rate limit errors
-        elif "rate_limit" in error_str.lower() or "429" in error_str:
+    except requests.exceptions.RequestException as e:
+        error_str = str(e)
+        if "rate_limit" in error_str.lower() or "429" in error_str:
             print("⚠️  Rate limit exceeded, waiting 60 seconds...")
             time.sleep(60)
             return query_docker_model(text, company_name)  # Retry once
-        
-        # Other errors
         else:
-            return f"Docker Model Error ({error_type}): {error_str}"
+            print(f"❌ Request Error: {error_str}")
+            return f"Docker Model API Error: {error_str}"
+            
+    except Exception as e:
+        error_str = str(e)
+        print(f"❌ Unexpected Error: {error_str}")
+        import traceback
+        print(f"🔍 DEBUG: Full traceback:")
+        traceback.print_exc()
+        return f"Docker Model Error: {error_str}"
 
 
 def extract_pdf_text(url: str, headers: Dict[str, str]) -> str:
@@ -581,6 +597,9 @@ def process_latest_announcement(cookie_header: Optional[str] = None, use_sample_
             print(f"✅ HTML fetched successfully ({len(html_content)} characters)")
         except Exception as e:
             print(f"❌ Failed to fetch HTML: {e}")
+            import traceback
+            print(f"🔍 DEBUG: Full traceback:")
+            traceback.print_exc()
             return False
     
     # Step 2: Extract latest announcement
@@ -589,6 +608,8 @@ def process_latest_announcement(cookie_header: Optional[str] = None, use_sample_
     
     if not latest_announcement:
         print("❌ No announcements found")
+        print("🔍 DEBUG: HTML content sample (last 1000 chars):")
+        print(html_content[-1000:] if len(html_content) > 1000 else html_content)
         return False
     
     company_url, pdf_url = latest_announcement
@@ -629,26 +650,9 @@ def process_latest_announcement(cookie_header: Optional[str] = None, use_sample_
     # Step 6: Format WhatsApp message
     print("\nStep 6: Formatting WhatsApp message...")
     
-    # Calculate fixed parts of the message (excluding summary)
-    fixed_parts = f"""Company: {company_name}
-https://www.screener.in{company_url}
-
-Document: {pdf_url}
-
----
-*Powered by FinVarta AI*"""
-    
-    # Calculate available space for summary (1000 char limit)
-    available_space = 1000 - len(fixed_parts)
-    
-    # Truncate summary if needed
-    if len(summary) > available_space:
-        truncated_summary = summary[:available_space - 3] + "..."
-        print(f"⚠️  Summary truncated to fit 1000 character limit ({len(summary)} -> {len(truncated_summary)} chars)")
-        summary = truncated_summary
-    
     # Create a formatted message for WhatsApp
-    whatsapp_message = f"""Company: {company_name}
+    whatsapp_message = f"""
+Company: {company_name}
 https://www.screener.in{company_url}
 
 Document: {pdf_url}
@@ -657,42 +661,23 @@ Document: {pdf_url}
 ---
 *Powered by FinVarta AI*"""
     
-    # Final check to ensure message is under 1000 characters
-    if len(whatsapp_message) > 1000:
-        # More aggressive truncation if still over limit
-        excess = len(whatsapp_message) - 1000
-        summary = summary[:len(summary) - excess - 3] + "..."
-        whatsapp_message = f"""Company: {company_name}
-https://www.screener.in{company_url}
-
-Document: {pdf_url}
-
-{summary}
----
-*Powered by FinVarta AI*"""
-        print(f"⚠️  Message truncated to exactly 1000 characters")
+    print("✅ WhatsApp message formatted")
+    print(f"📝 Message Preview: {whatsapp_message[:200]}...")
     
-    print(f"✅ WhatsApp message formatted ({len(whatsapp_message)} characters)")
-    print("\n" + "=" * 80)
-    print("MESSAGE TO BE SENT:")
-    print("=" * 80)
-    print(whatsapp_message)
-    print("=" * 80 + "\n")
+    # Step 7: Send WhatsApp message via Twilio
+    print("\nStep 7: Sending WhatsApp message via Twilio...")
     
-    # # Step 7: Send WhatsApp message via Twilio
-    # print("\nStep 7: Sending WhatsApp message via Twilio...")
-    
-    # if send_twilio_whatsapp_message(whatsapp_message, WHATSAPP_RECIPIENTS):
-    #     print("✅ WhatsApp message sent successfully")
+    if send_twilio_whatsapp_message(whatsapp_message, WHATSAPP_RECIPIENTS):
+        print("✅ WhatsApp message sent successfully")
         
-    #     # Save announcement hash for future duplicate detection
-    #     announcement_hash = generate_announcement_hash(company_name, pdf_url)
-    #     save_message_hash(announcement_hash)
+        # Save announcement hash for future duplicate detection
+        announcement_hash = generate_announcement_hash(company_name, pdf_url)
+        save_message_hash(announcement_hash)
         
-    #     return True
-    # else:
-    #     print("❌ Failed to send WhatsApp message")
-    #     return False
+        return True
+    else:
+        print("❌ Failed to send WhatsApp message")
+        return False
 
 
 def validate_environment_variables():
@@ -703,7 +688,7 @@ def validate_environment_variables():
         True if all required variables are set, False otherwise
     """
     required_vars = {
-        "DOCKER_MODEL_BASE_URL": DOCKER_MODEL_BASE_URL,
+        "DOCKER_MODEL_URL": DOCKER_MODEL_URL,
         "TWILIO_ACCOUNT_SID": TWILIO_ACCOUNT_SID,
         "TWILIO_AUTH_TOKEN": TWILIO_AUTH_TOKEN,
     }
@@ -754,9 +739,8 @@ REQUIREMENTS:
 
 CONFIGURATION:
     Before using, create a .env file with these settings:
-    - DOCKER_MODEL_BASE_URL: Base URL of your Docker-hosted model API (default: http://localhost:12434/engines/llama.cpp/v1)
-    - DOCKER_MODEL_API_KEY: API key for Docker model (default: dummy_value)
-    - DOCKER_MODEL: Model name to use (default: ai/smollm2)
+    - DOCKER_MODEL_URL: URL of your Docker-hosted model API (default: http://localhost:8000/v1/chat/completions)
+    - DOCKER_MODEL: Model name to use (default: gpt-3.5-turbo)
     - TWILIO_ACCOUNT_SID: Your Twilio Account SID
     - TWILIO_AUTH_TOKEN: Your Twilio Auth Token
     - WHATSAPP_RECIPIENTS: Comma-separated phone numbers with country code
