@@ -679,20 +679,20 @@ Document: {pdf_url}
     print(whatsapp_message)
     print("=" * 80 + "\n")
     
-    # # Step 7: Send WhatsApp message via Twilio
-    # print("\nStep 7: Sending WhatsApp message via Twilio...")
+    # Step 7: Send WhatsApp message via Twilio
+    print("\nStep 7: Sending WhatsApp message via Twilio...")
     
-    # if send_twilio_whatsapp_message(whatsapp_message, WHATSAPP_RECIPIENTS):
-    #     print("✅ WhatsApp message sent successfully")
+    if send_twilio_whatsapp_message(whatsapp_message, WHATSAPP_RECIPIENTS):
+        print("✅ WhatsApp message sent successfully")
         
-    #     # Save announcement hash for future duplicate detection
-    #     announcement_hash = generate_announcement_hash(company_name, pdf_url)
-    #     save_message_hash(announcement_hash)
+        # Save announcement hash for future duplicate detection
+        announcement_hash = generate_announcement_hash(company_name, pdf_url)
+        save_message_hash(announcement_hash)
         
-    #     return True
-    # else:
-    #     print("❌ Failed to send WhatsApp message")
-    #     return False
+        return True
+    else:
+        print("❌ Failed to send WhatsApp message")
+        return False
 
 
 def validate_environment_variables():
